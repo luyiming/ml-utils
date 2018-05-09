@@ -113,6 +113,10 @@ def main():
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
+    # Decay LR by a factor of 0.1 every 30 epochs
+    scheduler = optim.lr_scheduler.StepLR(
+        optimizer, step_size=30, gamma=0.1, last_epoch=args.start_epoch-1)
+
     # prepare output dir
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
@@ -122,7 +126,7 @@ def main():
 
     # prepare data
     trainset = torchvision.datasets.CIFAR10(
-        root='./data', train=True, download=True)
+        root='./data/cifar10', train=True, download=True)
     # [0.49139968  0.48215841  0.44653091]
     train_mean = trainset.train_data.mean(axis=(0, 1, 2)) / 255
     # [0.24703223  0.24348513  0.26158784]
@@ -159,7 +163,7 @@ def main():
     for epoch in range(args.start_epoch, args.epochs):
         # train for one epoch
         train_loss, train_prec = train(
-            trainloader, model, criterion, optimizer, epoch)
+            trainloader, model, criterion, optimizer, scheduler, epoch)
         train_losses.append(train_loss)
         train_precisions.append(train_prec)
 
@@ -190,7 +194,7 @@ def main():
     save_training_plots()
 
 
-def train(trainloader, model, criterion, optimizer, epoch):
+def train(trainloader, model, criterion, optimizer, scheduler, epoch):
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -198,6 +202,8 @@ def train(trainloader, model, criterion, optimizer, epoch):
 
     # switch to train mode
     model.train()
+
+    scheduler.step()
 
     end = time.time()
     for i, data in enumerate(trainloader):
