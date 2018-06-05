@@ -21,6 +21,7 @@ from sklearn.metrics import classification_report
 
 from tflogger import Logger
 
+from dataset import CIFAR10Dataset
 
 parser = argparse.ArgumentParser(description='PyTorch Training Template')
 parser.add_argument('--epochs', default=100, type=int, metavar='N',
@@ -56,7 +57,7 @@ logger = None
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
 
-class Net(nn.Module):
+class NaiveModel(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
         self.conv1 = nn.Conv2d(3, 6, 5)
@@ -81,7 +82,7 @@ def main():
     args = parser.parse_args()
 
     # create model
-    model = Net().to(device)
+    model = NaiveModel().to(device)
 
     print('Using', device)
 
@@ -136,39 +137,14 @@ def main():
         logger = Logger(os.path.join(args.output_dir, 'logs'))
 
     # prepare data
-    trainset = torchvision.datasets.CIFAR10(root='./data/cifar10', train=True,
-                                            download=True)
-    # [0.49139968  0.48215841  0.44653091]
-    train_mean = trainset.train_data.mean(axis=(0, 1, 2)) / 255
-    # [0.24703223  0.24348513  0.26158784]
-    train_std = trainset.train_data.std(axis=(0, 1, 2)) / 255
-
-    transform_train = transforms.Compose([
-        transforms.RandomCrop(32, padding=4),
-        transforms.RandomHorizontalFlip(),
-        transforms.ToTensor(),
-        transforms.Normalize(train_mean, train_std),
-    ])
-
-    transform_test = transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize(train_mean, train_std),
-    ])
-
-    trainset = torchvision.datasets.CIFAR10(root='./data/cifar10', train=True,
-                                            download=True, transform=transform_train)
-    testset = torchvision.datasets.CIFAR10(root='./data/cifar10', train=False,
-                                           download=True, transform=transform_test)
-    trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
-                                              shuffle=True, num_workers=2)
-    testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size,
-                                             shuffle=False, num_workers=2)
-    classes = ('plane', 'car', 'bird', 'cat',
-               'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+    dataset = CIFAR10Dataset()
+    trainloader = dataset.trainloader(args.batch_size, num_workers=2)
+    testloader = dataset.testloader(args.batch_size, num_workers=2)
+    target_names = dataset.target_names()
 
     if args.evaluate:
         validate(testloader, model, criterion,
-                 verbose=True, target_names=classes)
+                 verbose=True, target_names=target_names)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
@@ -198,10 +174,11 @@ def main():
             'test_accuracies': test_accuracies
         }, is_best)
 
-        print(' >>> Best accuracy: {:.3f} %, at epoch: {}'.format(
+        print(' >>> Best accuracy: {:.3f} %, at epoch: {}'.form`at(
             best_accu, test_accuracies.index(best_accu)+1))
 
-    validate(testloader, model, criterion, verbose=True, target_names=classes)
+    validate(testloader, model, criterion,
+             verbose=True, target_names=target_names)
     save_training_plots()
 
 
