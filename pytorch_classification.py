@@ -16,6 +16,8 @@ import torch.optim as optim
 import torchvision
 import torchvision.transforms as transforms
 
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import classification_report
 
 parser = argparse.ArgumentParser(description='PyTorch Training Template')
 parser.add_argument('--epochs', default=100, type=int, metavar='N',
@@ -39,11 +41,11 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
 parser.add_argument('-o', '--output-dir', default='model', type=str,
                     help='output directory')
 
-best_prec = 0
+best_accu = 0
 train_losses = []
-train_precisions = []
+train_accuracies = []
 test_losses = []
-test_precisions = []
+test_accuracies = []
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -69,7 +71,7 @@ class Net(nn.Module):
 
 
 def main():
-    global args, best_prec, train_losses, train_precisions, test_losses, test_precisions
+    global args, best_accu, train_losses, train_accuracies, test_losses, test_accuracies
     args = parser.parse_args()
 
     # create model
@@ -98,21 +100,21 @@ def main():
             else:
                 checkpoint = torch.load(args.resume, map_location='cpu')
             args.start_epoch = checkpoint['epoch']
-            best_prec = checkpoint['best_prec']
+            best_accu = checkpoint['best_accu']
             model.load_state_dict(checkpoint['state_dict'])
             optimizer.load_state_dict(checkpoint['optimizer'])
             train_losses = checkpoint.get('train_losses', [])
-            train_precisions = checkpoint.get('train_precisions', [])
+            train_accuracies = checkpoint.get('train_accuracies', [])
             test_losses = checkpoint.get('test_losses', [])
-            test_precisions = checkpoint.get('test_precisions', [])
+            test_accuracies = checkpoint.get('test_accuracies', [])
             print("=> loaded checkpoint '{}' (epochs {})"
                   .format(args.resume, checkpoint['epoch']))
         else:
             print("=> no checkpoint found at '{}'".format(args.resume))
 
     # Decay LR by a factor of 0.1 every 30 epochs
-    scheduler = optim.lr_scheduler.StepLR(
-        optimizer, step_size=30, gamma=0.1, last_epoch=args.start_epoch-1)
+    scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30,
+                                          gamma=0.1, last_epoch=args.start_epoch-1)
 
     # prepare output dir
     if not os.path.exists(args.output_dir):
@@ -122,8 +124,8 @@ def main():
         exit(1)
 
     # prepare data
-    trainset = torchvision.datasets.CIFAR10(
-        root='./data/cifar10', train=True, download=True)
+    trainset = torchvision.datasets.CIFAR10(root='./data/cifar10', train=True,
+                                            download=True)
     # [0.49139968  0.48215841  0.44653091]
     train_mean = trainset.train_data.mean(axis=(0, 1, 2)) / 255
     # [0.24703223  0.24348513  0.26158784]
@@ -153,41 +155,41 @@ def main():
                'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
     if args.evaluate:
-        validate(testloader, model, criterion)
-        validate_each_class(testloader, model, classes)
+        validate(testloader, model, criterion,
+                 verbose=True, target_names=classes)
         return
 
     for epoch in range(args.start_epoch, args.epochs):
         # train for one epoch
-        train_loss, train_prec = train(
-            trainloader, model, criterion, optimizer, scheduler, epoch)
+        train_loss, train_accu = train(trainloader, model, criterion,
+                                       optimizer, scheduler, epoch)
         train_losses.append(train_loss)
-        train_precisions.append(train_prec)
+        train_accuracies.append(train_accu)
 
         # evaluate on validation set
-        test_loss, test_prec = validate(testloader, model, criterion)
+        test_loss, test_accu = validate(testloader, model, criterion)
         test_losses.append(test_loss)
-        test_precisions.append(test_prec)
+        test_accuracies.append(test_accu)
 
         # remember best prec and save checkpoint
-        is_best = test_prec > best_prec
-        best_prec = max(test_prec, best_prec)
+        is_best = test_accu > best_accu
+        best_accu = max(test_accu, best_accu)
 
         save_checkpoint({
             'epoch': epoch + 1,
             'state_dict': model.state_dict(),
-            'best_prec': best_prec,
+            'best_accu': best_accu,
             'optimizer': optimizer.state_dict(),
             'train_losses': train_losses,
-            'train_precisions': train_precisions,
+            'train_accuracies': train_accuracies,
             'test_losses': test_losses,
-            'test_precisions': test_precisions
+            'test_accuracies': test_accuracies
         }, is_best)
 
-        print(' >>> Best precision: {:.3f} %, at epoch: {}'.format(
-            best_prec, test_precisions.index(best_prec)+1))
+        print(' >>> Best accuracy: {:.3f} %, at epoch: {}'.format(
+            best_accu, test_accuracies.index(best_accu)+1))
 
-    validate_each_class(testloader, model, classes)
+    validate(testloader, model, criterion, verbose=True, target_names=classes)
     save_training_plots()
 
 
@@ -215,9 +217,11 @@ def train(trainloader, model, criterion, optimizer, scheduler, epoch):
         loss = criterion(outputs, labels)
 
         # measure accuracy and record loss
-        prec = accuracy(outputs, labels)
+        y_true = labels.detach().numpy()
+        y_pred = np.argmax(outputs.detach().numpy(), axis=1)
+        accu = accuracy_score(y_true=y_true, y_pred=y_pred)
         losses.update(loss.item(), inputs.size(0))
-        top1.update(prec, inputs.size(0))
+        top1.update(accu, inputs.size(0))
 
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -233,17 +237,19 @@ def train(trainloader, model, criterion, optimizer, scheduler, epoch):
                   'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                   'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
                   'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Prec {top1.val:.3f}% ({top1.avg:.3f}%)'.format(
+                  'Accu {top1.val:.3f}% ({top1.avg:.3f}%)'.format(
                       epoch, i, len(trainloader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
 
     return (losses.avg, top1.avg)
 
 
-def validate(testloader, model, criterion):
+def validate(testloader, model, criterion, verbose=False, target_names=None):
     batch_time = AverageMeter()
     losses = AverageMeter()
     top1 = AverageMeter()
+    y_preds = []
+    y_trues = []
 
     # switch to evaluate mode
     model.eval()
@@ -259,9 +265,15 @@ def validate(testloader, model, criterion):
             loss = criterion(outputs, labels)
 
             # measure accuracy and record loss
-            prec = accuracy(outputs, labels)
+            y_true = labels.detach().numpy()
+            y_pred = np.argmax(outputs.detach().numpy(), axis=1)
+            accu = accuracy_score(y_true=y_true, y_pred=y_pred)
             losses.update(loss.item(), inputs.size(0))
-            top1.update(prec, inputs.size(0))
+            top1.update(accu, inputs.size(0))
+
+            if verbose:
+                y_preds.append(y_pred)
+                y_trues.append(y_true)
 
             # measure elapsed time
             batch_time.update(time.time() - end)
@@ -271,41 +283,18 @@ def validate(testloader, model, criterion):
                 print('Test: [{0}/{1}]\t'
                       'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
                       'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                      'Prec {top1.val:.3f} % ({top1.avg:.3f} %)'.format(
-                          i, len(testloader), batch_time=batch_time, loss=losses,
-                          top1=top1))
+                      'Accu {top1.val:.3f} % ({top1.avg:.3f} %)'
+                      .format(i, len(testloader), batch_time=batch_time, loss=losses, top1=top1))
 
-    print(' >>> Prec {top1.avg:.3f} %'.format(top1=top1))
+    print(' >>> Accu {top1.avg:.3f} %'.format(top1=top1))
+
+    if verbose:
+        y_preds = np.concatenate(y_preds, axis=0)
+        y_trues = np.concatenate(y_trues, axis=0)
+        print(classification_report(y_true=y_trues,
+                                    y_pred=y_preds, target_names=target_names))
 
     return (losses.avg, top1.avg)
-
-
-def validate_each_class(testloader, model, classes):
-    '''
-    Parameters:
-        classes: int, n_classes
-                 list of str, names for each class
-    '''
-    if isinstance(classes, list) or isinstance(classes, tuple):
-        n_classes = len(classes)
-    else:
-        n_classes = classes
-        classes = [i for i in range(n_classes)]
-
-    class_correct = [0.0] * n_classes
-    class_total = [0.0] * n_classes
-    with torch.no_grad():
-        for (images, labels) in testloader:
-            images, labels = images.to(device), labels.to(device)
-            outputs = model(images)
-            _, predicted = torch.max(outputs, 1)
-            c = (predicted == labels).squeeze()
-            for i in range(min(args.batch_size, len(labels))):
-                class_correct[labels[i]] += c[i].item()
-                class_total[labels[i]] += 1
-    for i in range(n_classes):
-        print('Class {:5} precision: {:.3f} %'.format(
-            classes[i], 100 * class_correct[i] / class_total[i]))
 
 
 def save_checkpoint(state, is_best):
@@ -317,16 +306,8 @@ def save_checkpoint(state, is_best):
             args.output_dir, 'model_best.pth.tar'))
 
 
-def accuracy(outputs, labels):
-    """Computes the precision"""
-    batch_size = labels.size(0)
-    _, predicted = torch.max(outputs, 1)
-    correct = (predicted == labels).sum().item()
-    return 100.0 * correct / batch_size
-
-
 def save_training_plots():
-    global args, train_losses, train_precisions, test_losses, test_precisions
+    global args, train_losses, train_accuracies, test_losses, test_accuracies
     fig = plt.figure()
     ax = fig.add_subplot(111)
     ax.plot(train_losses, label='train_loss')
@@ -337,8 +318,8 @@ def save_training_plots():
 
     fig = plt.figure()
     ax = fig.add_subplot(111)
-    ax.plot(train_precisions, label='train_accuracy')
-    ax.plot(test_precisions, label='test_accuracy')
+    ax.plot(train_accuracies, label='train_accuracy')
+    ax.plot(test_accuracies, label='test_accuracy')
     ax.set_xlabel("epoch")
     ax.set_ylabel("accuracy(%)")
     ax.legend()
