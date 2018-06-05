@@ -1,37 +1,7 @@
 import torch
 import torchvision
 import torchvision.transforms as transforms
-
-# trainset = torchvision.datasets.CIFAR10(
-#     root='./data/cifar10', train=True, download=True)
-# # [0.49139968  0.48215841  0.44653091]
-# train_mean = trainset.train_data.mean(axis=(0, 1, 2)) / 255
-# # [0.24703223  0.24348513  0.26158784]
-# train_std = trainset.train_data.std(axis=(0, 1, 2)) / 255
-
-# transform_train = transforms.Compose([
-#     transforms.RandomCrop(32, padding=4),
-#     transforms.RandomHorizontalFlip(),
-#     transforms.ToTensor(),
-#     transforms.Normalize(train_mean, train_std),
-# ])
-
-# transform_test = transforms.Compose([
-#     transforms.ToTensor(),
-#     transforms.Normalize(train_mean, train_std),
-# ])
-
-# trainset = torchvision.datasets.CIFAR10(root='./data/cifar10', train=True,
-#                                         download=True, transform=transform_train)
-# testset = torchvision.datasets.CIFAR10(root='./data/cifar10', train=False,
-#                                        download=True, transform=transform_test)
-# trainloader = torch.utils.data.DataLoader(trainset, batch_size=args.batch_size,
-#                                           shuffle=True, num_workers=2)
-# testloader = torch.utils.data.DataLoader(testset, batch_size=args.batch_size,
-#                                          shuffle=False, num_workers=2)
-
-# classes = ('plane', 'car', 'bird', 'cat',
-#            'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
+import random
 
 
 class CIFAR10Dataset(object):
@@ -73,47 +43,67 @@ class CIFAR10Dataset(object):
         return ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
 
 
-# class ToyDataLoader(object):
+class ToyDataset(torch.utils.data.Dataset):
+    'Characterizes a dataset for PyTorch'
 
-#     def __init__(self, batch_size):
-#         self.batch_size = batch_size
-#         self.index = 0
-#         self.dataset_size = 10
+    def __init__(self, ):
+        'Initialization'
+        self.X = [[1, 2, 3], [4, 5, 6], [7, 8, 9]]
+        self.y = [1, 2, 3]
 
-#         # generate 10 random variable length training samples,
-#         # each time step has 1 feature dimension
-#         self.X = [
-#             [[1], [1], [1], [1], [0], [0], [1], [1], [1]],
-#             [[1], [1], [1], [1]],
-#             [[0], [0], [1], [1]],
-#             [[1], [1], [1], [1], [1], [1], [1]],
-#             [[1], [1]],
-#             [[0]],
-#             [[0], [0], [0], [0], [0], [0], [0]],
-#             [[1]],
-#             [[0], [1]],
-#             [[1], [0]]
-#         ]
+    def __len__(self):
+        'Denotes the total number of samples'
+        return len(self.X)
 
-#         # assign labels for the toy traning set
-#         self.y = torch.LongTensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
+    def __getitem__(self, index):
+        'Generates one sample of data'
+        X = torch.Tensor(self.X[index])
+        y = torch.LongTensor(self.y[index])
 
-#     def __len__(self):
-#         return self.dataset_size // self.batch_size
+        return X, y
 
-#     def __iter__(self):
-#         return self
 
-#     def __next__(self):
-#         if self.index + self.batch_size > self.dataset_size:
-#             self.index = 0
-#             raise StopIteration()
-#         if self.index == 0:  # shufle the dataset
-#             tmp = list(zip(self.X, self.y))
-#             random.shuffle(tmp)
-#             self.X, self.y = zip(*tmp)
-#             self.y = torch.LongTensor(self.y)
-#         X = self.X[self.index: self.index + self.batch_size]
-#         y = self.y[self.index: self.index + self.batch_size]
-#         self.index += self.batch_size
-#         return X, y
+class ToyDataLoader(object):
+
+    def __init__(self, batch_size):
+        self.batch_size = batch_size
+        self.index = 0
+        self.dataset_size = 10
+
+        # generate 10 random variable length training samples,
+        # each time step has 1 feature dimension
+        self.X = [
+            [[1], [1], [1], [1], [0], [0], [1], [1], [1]],
+            [[1], [1], [1], [1]],
+            [[0], [0], [1], [1]],
+            [[1], [1], [1], [1], [1], [1], [1]],
+            [[1], [1]],
+            [[0]],
+            [[0], [0], [0], [0], [0], [0], [0]],
+            [[1]],
+            [[0], [1]],
+            [[1], [0]]
+        ]
+
+        # assign labels for the toy traning set
+        self.y = torch.LongTensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1])
+
+    def __len__(self):
+        return self.dataset_size // self.batch_size
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        if self.index + self.batch_size > self.dataset_size:
+            self.index = 0
+            raise StopIteration()
+        if self.index == 0:  # shufle the dataset
+            tmp = list(zip(self.X, self.y))
+            random.shuffle(tmp)
+            self.X, self.y = zip(*tmp)
+            self.y = torch.LongTensor(self.y)
+        X = self.X[self.index: self.index + self.batch_size]
+        y = self.y[self.index: self.index + self.batch_size]
+        self.index += self.batch_size
+        return X, y
