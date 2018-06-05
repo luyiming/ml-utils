@@ -19,6 +19,9 @@ import torchvision.transforms as transforms
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import classification_report
 
+from tflogger import Logger
+
+
 parser = argparse.ArgumentParser(description='PyTorch Training Template')
 parser.add_argument('--epochs', default=100, type=int, metavar='N',
                     help='number of total epochs to run')
@@ -40,12 +43,15 @@ parser.add_argument('-e', '--evaluate', dest='evaluate', action='store_true',
                     help='evaluate model on validation set')
 parser.add_argument('-o', '--output-dir', default='model', type=str,
                     help='output directory')
+parser.add_argument('--use-tflog', default=False, action='store_true',
+                    help='log for tensorboard')
 
 best_accu = 0
 train_losses = []
 train_accuracies = []
 test_losses = []
 test_accuracies = []
+logger = None
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
@@ -71,7 +77,7 @@ class Net(nn.Module):
 
 
 def main():
-    global args, best_accu, train_losses, train_accuracies, test_losses, test_accuracies
+    global args, logger, best_accu, train_losses, train_accuracies, test_losses, test_accuracies
     args = parser.parse_args()
 
     # create model
@@ -117,11 +123,17 @@ def main():
                                           gamma=0.1, last_epoch=args.start_epoch-1)
 
     # prepare output dir
+    # args.output_dir = args.output_dir + '-' + str(time.time())
     if not os.path.exists(args.output_dir):
         os.mkdir(args.output_dir)
     elif not os.path.isdir(args.output_dir):
         print('output dir {} cannot be created'.format(args.output_dir))
         exit(1)
+
+    if args.use_tflog:
+        if os.path.exists(os.path.join(args.output_dir, 'logs')):
+            shutil.rmtree(os.path.join(args.output_dir, 'logs'))
+        logger = Logger(os.path.join(args.output_dir, 'logs'))
 
     # prepare data
     trainset = torchvision.datasets.CIFAR10(root='./data/cifar10', train=True,
@@ -194,6 +206,7 @@ def main():
 
 
 def train(trainloader, model, criterion, optimizer, scheduler, epoch):
+    global logger
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
@@ -240,6 +253,30 @@ def train(trainloader, model, criterion, optimizer, scheduler, epoch):
                   'Accu {top1.val:.3f}% ({top1.avg:.3f}%)'.format(
                       epoch, i, len(trainloader), batch_time=batch_time,
                       data_time=data_time, loss=losses, top1=top1))
+
+            # ================================================================== #
+            #                        Tensorboard Logging                         #
+            # ================================================================== #
+
+            if args.use_tflog:
+                # Log scalar values (scalar summary)
+                info = {'loss': loss.item(), 'accuracy': accu}
+
+                for tag, value in info.items():
+                    logger.scalar_summary(tag, value, i+1)
+
+                # Log values and gradients of the parameters (histogram summary)
+                for tag, value in model.named_parameters():
+                    tag = tag.replace('.', '/')
+                    logger.histo_summary(tag, value.data.cpu().numpy(), i+1)
+                    logger.histo_summary(
+                        tag+'/grad', value.grad.data.cpu().numpy(), i+1)
+
+                # Log training images (image summary)
+                info = {'images': inputs.view(-1, 3, 32, 32)[:5].cpu().numpy()}
+
+                for tag, images in info.items():
+                    logger.image_summary(tag, images, i+1)
 
     return (losses.avg, top1.avg)
 
@@ -302,8 +339,8 @@ def save_checkpoint(state, is_best):
     filename = os.path.join(args.output_dir, 'checkpoint.pth.tar')
     torch.save(state, filename)
     if is_best:
-        shutil.copyfile(filename, os.path.join(
-            args.output_dir, 'model_best.pth.tar'))
+        shutil.copyfile(filename, os.path.join(args.output_dir,
+                                               'model_best.pth.tar'))
 
 
 def save_training_plots():
